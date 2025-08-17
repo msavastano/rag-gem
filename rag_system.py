@@ -4,6 +4,7 @@ import hashlib
 import google.generativeai as genai
 import json
 from bs4 import BeautifulSoup
+import requests
 
 # Try to import chromadb optionally. Installing chromadb can pull heavy
 # dependencies (onnxruntime, pulsar-client, numpy pins) which may conflict
@@ -29,48 +30,76 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 # Constants for models and database
 GEMINI_EMBEDDING_MODEL = "models/text-embedding-004"
-GEMINI_GENERATIVE_MODEL = "gemini-1.5-flash"
+GEMINI_GENERATIVE_MODEL = "gemini-2.5-flash"
 DB_PATH = "./chroma_db"
 COLLECTION_NAME_PREFIX = "rag_collection_"
 
 # --- Module 1: Data Ingestion ---
 
-def load_and_chunk_file(file_path, chunk_size=1000, chunk_overlap=100):
+def scrape_url(url):
     """
-    Loads a JSON or HTML file, extracts text, and splits it into chunks.
+    Scrapes the text content from a single URL.
     Args:
-        file_path (str): The path to the file.
+        url (str): The URL to scrape.
+    Returns:
+        str: The extracted text from the URL, or None if scraping fails.
+    """
+    try:
+        print(f"Scraping URL: {url}...")
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        soup = BeautifulSoup(response.content, 'html.parser')
+        text = soup.get_text(separator=' ', strip=True)
+        return text
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching URL {url}: {e}")
+        return None
+    except Exception as e:
+        print(f"Error processing URL {url}: {e}")
+        return None
+
+def load_and_chunk_data(source, chunk_size=1000, chunk_overlap=100):
+    """
+    Loads data from a file or URL, extracts text, and splits it into chunks.
+    Args:
+        source (str): The path to the file or the URL to scrape.
         chunk_size (int): The maximum size of each chunk in characters.
         chunk_overlap (int): The number of characters to overlap between chunks.
     Returns:
         list[str]: A list of text chunks, or None if processing fails.
     """
-    if not os.path.exists(file_path):
-        print(f"Error: File not found at {file_path}")
-        return None
-
     text = ""
-    try:
-        print(f"Loading and processing file: {file_path}...")
-        file_extension = os.path.splitext(file_path)[1].lower()
+    is_url = source.startswith('http://') or source.startswith('https://')
 
-        if file_extension == '.json':
-            with open(file_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                text = json.dumps(data, indent=2)
-        elif file_extension == '.html':
-            with open(file_path, 'r', encoding='utf-8') as f:
-                soup = BeautifulSoup(f, 'html.parser')
-                text = soup.get_text(separator=' ', strip=True)
-        else:
-            print(f"Error: Unsupported file type '{file_extension}'. Please use JSON or HTML.")
+    if is_url:
+        text = scrape_url(source)
+        if not text:
+            return None
+    else:  # It's a file path
+        if not os.path.exists(source):
+            print(f"Error: File not found at {source}")
             return None
 
+        try:
+            print(f"Loading and processing file: {source}...")
+            file_extension = os.path.splitext(source)[1].lower()
 
-    except Exception as e:
-        print(f"Error processing file {file_path}: {e}")
-        return None
-    
+            if file_extension == '.json':
+                with open(source, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    text = json.dumps(data, indent=2)
+            elif file_extension == '.html':
+                with open(source, 'r', encoding='utf-8') as f:
+                    soup = BeautifulSoup(f, 'html.parser')
+                    text = soup.get_text(separator=' ', strip=True)
+            else:
+                print(f"Error: Unsupported file type '{file_extension}'. Please use JSON or HTML.")
+                return None
+
+        except Exception as e:
+            print(f"Error processing file {source}: {e}")
+            return None
+
     # Basic text cleaning
     text = re.sub(r'\s+', ' ', text).strip()
     
@@ -102,20 +131,19 @@ def get_gemini_embedding_function():
         model_name=GEMINI_EMBEDDING_MODEL
     )
 
-def create_or_load_vector_store(file_path, chunks):
+def create_or_load_vector_store(source, chunks):
     """
     Creates a new ChromaDB vector store or loads an existing one.
-    A unique collection name is generated based on the file's content hash.
+    A unique collection name is generated based on the source's content hash.
     Args:
-        file_path (str): Path to the source PDF file.
-        chunks (list[str]): List of text chunks from the PDF.
+        source (str): Path to the source file or URL.
+        chunks (list[str]): List of text chunks from the source.
     Returns:
         chromadb.Collection: The ChromaDB collection object.
     """
-    # Generate a unique and deterministic collection name from the file path
-    # This helps in loading the correct pre-indexed collection for a given file
-    file_hash = hashlib.md5(file_path.encode()).hexdigest()
-    collection_name = f"{COLLECTION_NAME_PREFIX}{file_hash}"
+    # Generate a unique and deterministic collection name from the source (file path or URL)
+    source_hash = hashlib.md5(source.encode()).hexdigest()
+    collection_name = f"{COLLECTION_NAME_PREFIX}{source_hash}"
 
     if not CHROMADB_AVAILABLE:
         print("chromadb is not installed in this environment. To enable the ChromaDB vector store, install chromadb in a clean venv: \n"
@@ -213,18 +241,18 @@ def main():
     """
     Orchestrates the entire RAG pipeline.
     """
-    # 1. Get file path from user
-    file_path = input("Enter the path to your JSON or HTML file: ")
+    # 1. Get source from user
+    source = input("Enter the path to your JSON/HTML file or a URL to scrape: ")
     
     # 2. Ingest and Process the Document
-    chunks = load_and_chunk_file(file_path)
+    chunks = load_and_chunk_data(source)
     if not chunks:
-        return # Exit if loading failed
+        return  # Exit if loading failed
         
     # 3. Create or Load the Vector Store
-    vector_store = create_or_load_vector_store(file_path, chunks)
+    vector_store = create_or_load_vector_store(source, chunks)
     if not vector_store:
-        return # Exit if vector store creation failed
+        return  # Exit if vector store creation failed
 
     # 4. Interactive Q&A Loop
     print("\n--- RAG System Ready. Ask questions about your document. ---")
