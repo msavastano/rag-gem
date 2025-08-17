@@ -239,43 +239,89 @@ def generate_response(prompt):
 
 def main():
     """
-    Orchestrates the entire RAG pipeline.
+    Orchestrates the entire RAG pipeline with a multi-document management system.
     """
-    # 1. Get source from user
-    source = input("Enter the path to your JSON/HTML file or a URL to scrape: ")
-    
-    # 2. Ingest and Process the Document
-    chunks = load_and_chunk_data(source)
-    if not chunks:
-        return  # Exit if loading failed
-        
-    # 3. Create or Load the Vector Store
-    vector_store = create_or_load_vector_store(source, chunks)
-    if not vector_store:
-        return  # Exit if vector store creation failed
+    # In-memory dictionary to store vector stores for loaded documents
+    document_stores = {}
 
-    # 4. Interactive Q&A Loop
-    print("\n--- RAG System Ready. Ask questions about your document. ---")
-    print("Type 'exit' or 'quit' to end the session.")
-    
     while True:
-        user_query = input("\nYour Question: ")
-        if user_query.lower() in ["exit", "quit"]:
+        print("\n--- Main Menu ---")
+        print("1. Add a new document")
+        print("2. Ask questions about a document")
+        print("3. List loaded documents")
+        print("4. Exit")
+        choice = input("Enter your choice (1-4): ")
+
+        if choice == '1':
+            # Add a new document
+            source = input("Enter the path to your JSON/HTML file or a URL to scrape: ")
+            if source in document_stores:
+                print(f"Document '{source}' is already loaded.")
+                continue
+            
+            chunks = load_and_chunk_data(source)
+            if not chunks:
+                continue  # Continue to main menu if loading fails
+
+            vector_store = create_or_load_vector_store(source, chunks)
+            if vector_store:
+                document_stores[source] = vector_store
+                print(f"\nSuccessfully loaded and indexed '{source}'.")
+
+        elif choice == '2':
+            # Ask questions about a document
+            if not document_stores:
+                print("\nNo documents loaded yet. Please add a document first.")
+                continue
+
+            print("\n--- Select a Document to Query ---")
+            sources = list(document_stores.keys())
+            for i, src in enumerate(sources):
+                print(f"{i + 1}. {src}")
+
+            try:
+                doc_choice = int(input(f"Enter your choice (1-{len(sources)}): ")) - 1
+                if not 0 <= doc_choice < len(sources):
+                    print("Invalid choice. Please try again.")
+                    continue
+
+                selected_source = sources[doc_choice]
+                vector_store = document_stores[selected_source]
+
+                print(f"\n--- Querying '{selected_source}' ---")
+                print("Type 'back' to return to the main menu.")
+
+                while True:
+                    user_query = input("\nYour Question: ")
+                    if user_query.lower() == 'back':
+                        break
+
+                    context = retrieve_relevant_passages(user_query, vector_store)
+                    prompt = build_prompt(user_query, context)
+                    answer = generate_response(prompt)
+
+                    print("\n--- Generated Answer ---")
+                    print(answer)
+                    print("------------------------")
+
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+
+        elif choice == '3':
+            # List loaded documents
+            if not document_stores:
+                print("\nNo documents loaded yet.")
+            else:
+                print("\n--- Loaded Documents ---")
+                for i, source in enumerate(document_stores.keys()):
+                    print(f"{i + 1}. {source}")
+        
+        elif choice == '4':
             print("Exiting RAG system. Goodbye!")
             break
-            
-        # 5. Retrieve
-        context = retrieve_relevant_passages(user_query, vector_store)
         
-        # 6. Augment
-        prompt = build_prompt(user_query, context)
-        
-        # 7. Generate
-        answer = generate_response(prompt)
-        
-        print("\n--- Generated Answer ---")
-        print(answer)
-        print("------------------------")
+        else:
+            print("Invalid choice. Please enter a number between 1 and 4.")
 
 if __name__ == "__main__":
     main()
