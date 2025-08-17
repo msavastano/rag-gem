@@ -30,7 +30,7 @@ genai.configure(api_key=GOOGLE_API_KEY)
 
 # Constants for models and database
 GEMINI_EMBEDDING_MODEL = "models/text-embedding-004"
-GEMINI_GENERATIVE_MODEL = "gemini-1.5-flash"
+GEMINI_GENERATIVE_MODEL = "gemini-2.5-flash"
 DB_PATH = "./chroma_db"
 COLLECTION_NAME_PREFIX = "rag_collection_"
 
