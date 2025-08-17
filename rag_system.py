@@ -113,7 +113,7 @@ def create_or_load_vector_store(file_path, chunks):
         collection = client.get_collection(name=collection_name, embedding_function=embedding_function)
         print(f"Loaded existing collection '{collection_name}' from disk.")
         return collection
-    except chromadb.errors.NotFoundError:
+    except ValueError:
         print(f"Collection '{collection_name}' not found. Creating a new one...")
         
     if not chunks:
@@ -158,7 +158,7 @@ def retrieve_relevant_passages(query, collection, top_k=5):
         query_texts=[query],
         n_results=top_k
     )
-    return results['documents']
+    return results['documents'][0]
 
 def build_prompt(query, context_passages):
     """
