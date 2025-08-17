@@ -3,5 +3,6 @@
 # langchain-google-genai
 # faiss-cpu
 # python-dotenv
-google-generativeai 
+google-generativeai
 beautifulsoup4
+requests
