@@ -113,7 +113,7 @@ def create_or_load_vector_store(file_path, chunks):
         collection = client.get_collection(name=collection_name, embedding_function=embedding_function)
         print(f"Loaded existing collection '{collection_name}' from disk.")
         return collection
-    except ValueError:
+    except chromadb.errors.NotFoundError:
         print(f"Collection '{collection_name}' not found. Creating a new one...")
         
     if not chunks:
