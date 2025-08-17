@@ -2,7 +2,8 @@ import os
 import re
 import hashlib
 import google.generativeai as genai
-from pypdf import PdfReader
+import json
+from bs4 import BeautifulSoup
 
 # Try to import chromadb optionally. Installing chromadb can pull heavy
 # dependencies (onnxruntime, pulsar-client, numpy pins) which may conflict
@@ -34,24 +35,41 @@ COLLECTION_NAME_PREFIX = "rag_collection_"
 
 # --- Module 1: Data Ingestion ---
 
-def load_and_chunk_pdf(file_path, chunk_size=1000, chunk_overlap=100):
+def load_and_chunk_file(file_path, chunk_size=1000, chunk_overlap=100):
     """
-    Loads a PDF, extracts text, and splits it into overlapping chunks.
-    This uses a simple recursive-style splitting logic.
+    Loads a JSON or HTML file, extracts text, and splits it into chunks.
     Args:
-        file_path (str): The path to the PDF file.
+        file_path (str): The path to the file.
         chunk_size (int): The maximum size of each chunk in characters.
         chunk_overlap (int): The number of characters to overlap between chunks.
     Returns:
-        list[str]: A list of text chunks.
+        list[str]: A list of text chunks, or None if processing fails.
     """
     if not os.path.exists(file_path):
         print(f"Error: File not found at {file_path}")
-        return
-        
-    print(f"Loading and chunking PDF: {file_path}...")
-    reader = PdfReader(file_path)
-    text = "".join(page.extract_text() for page in reader.pages)
+        return None
+
+    text = ""
+    try:
+        print(f"Loading and processing file: {file_path}...")
+        file_extension = os.path.splitext(file_path)[1].lower()
+
+        if file_extension == '.json':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                text = json.dumps(data, indent=2)
+        elif file_extension == '.html':
+            with open(file_path, 'r', encoding='utf-8') as f:
+                soup = BeautifulSoup(f, 'html.parser')
+                text = soup.get_text(separator=' ', strip=True)
+        else:
+            print(f"Error: Unsupported file type '{file_extension}'. Please use JSON or HTML.")
+            return None
+
+
+    except Exception as e:
+        print(f"Error processing file {file_path}: {e}")
+        return None
     
     # Basic text cleaning
     text = re.sub(r'\s+', ' ', text).strip()
@@ -113,7 +131,7 @@ def create_or_load_vector_store(file_path, chunks):
         collection = client.get_collection(name=collection_name, embedding_function=embedding_function)
         print(f"Loaded existing collection '{collection_name}' from disk.")
         return collection
-    except ValueError:
+    except chromadb.errors.NotFoundError:
         print(f"Collection '{collection_name}' not found. Creating a new one...")
         
     if not chunks:
@@ -158,7 +176,7 @@ def retrieve_relevant_passages(query, collection, top_k=5):
         query_texts=[query],
         n_results=top_k
     )
-    return results['documents']
+    return results['documents'][0]
 
 def build_prompt(query, context_passages):
     """
@@ -195,16 +213,16 @@ def main():
     """
     Orchestrates the entire RAG pipeline.
     """
-    # 1. Get PDF file path from user
-    pdf_file_path = input("Enter the path to your PDF file: ")
+    # 1. Get file path from user
+    file_path = input("Enter the path to your JSON or HTML file: ")
     
     # 2. Ingest and Process the Document
-    chunks = load_and_chunk_pdf(pdf_file_path)
+    chunks = load_and_chunk_file(file_path)
     if not chunks:
         return # Exit if loading failed
         
     # 3. Create or Load the Vector Store
-    vector_store = create_or_load_vector_store(pdf_file_path, chunks)
+    vector_store = create_or_load_vector_store(file_path, chunks)
     if not vector_store:
         return # Exit if vector store creation failed
 
