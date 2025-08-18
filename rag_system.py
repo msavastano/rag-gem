@@ -187,6 +187,27 @@ def create_or_load_vector_store(source, chunks):
     print(f"Successfully created and indexed collection '{collection_name}'.")
     return collection
 
+def delete_collection(source):
+    """
+    Deletes the ChromaDB collection associated with a given source.
+    Args:
+        source (str): The source (file path or URL) of the collection to delete.
+    """
+    if not CHROMADB_AVAILABLE:
+        print("chromadb is not available. Cannot delete collection.")
+        return
+
+    try:
+        source_hash = hashlib.md5(source.encode()).hexdigest()
+        collection_name = f"{COLLECTION_NAME_PREFIX}{source_hash}"
+
+        client = chromadb.PersistentClient(path=DB_PATH)
+        client.delete_collection(name=collection_name)
+        print(f"Successfully deleted collection for source: {source}")
+    except Exception as e:
+        print(f"Error deleting collection for source {source}: {e}")
+
+
 # --- Module 3: Retrieval and Generation ---
 
 def retrieve_relevant_passages(query, collection, top_k=5):
@@ -237,20 +258,49 @@ def generate_response(prompt):
 
 # --- Module 4: Main Execution Block ---
 
+SOURCES_FILE = 'document_sources.json'
+
+def load_sources():
+    """Loads the list of document sources from the JSON file."""
+    if not os.path.exists(SOURCES_FILE):
+        return {}
+    try:
+        with open(SOURCES_FILE, 'r') as f:
+            return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return {}
+
+def save_sources(sources):
+    """Saves the list of document sources to the JSON file."""
+    with open(SOURCES_FILE, 'w') as f:
+        json.dump(sources, f, indent=4)
+
 def main():
     """
     Orchestrates the entire RAG pipeline with a multi-document management system.
     """
-    # In-memory dictionary to store vector stores for loaded documents
+    # Load previously saved sources and initialize their vector stores
+    saved_sources = load_sources()
     document_stores = {}
+    if saved_sources:
+        print("Loading previously added documents...")
+        for source in saved_sources:
+            # We pass `chunks=None` because we expect the collection to exist.
+            # If it doesn't, create_or_load_vector_store will handle it gracefully.
+            vector_store = create_or_load_vector_store(source, chunks=None)
+            if vector_store:
+                document_stores[source] = vector_store
+        print("---")
+
 
     while True:
         print("\n--- Main Menu ---")
         print("1. Add a new document")
         print("2. Ask questions about a document")
         print("3. List loaded documents")
-        print("4. Exit")
-        choice = input("Enter your choice (1-4): ")
+        print("4. Remove a document")
+        print("5. Exit")
+        choice = input("Enter your choice (1-5): ")
 
         if choice == '1':
             # Add a new document
@@ -266,6 +316,8 @@ def main():
             vector_store = create_or_load_vector_store(source, chunks)
             if vector_store:
                 document_stores[source] = vector_store
+                # Save the updated list of sources for persistence
+                save_sources(list(document_stores.keys()))
                 print(f"\nSuccessfully loaded and indexed '{source}'.")
 
         elif choice == '2':
@@ -317,11 +369,44 @@ def main():
                     print(f"{i + 1}. {source}")
         
         elif choice == '4':
+            # Remove a document
+            if not document_stores:
+                print("\nNo documents loaded yet.")
+                continue
+
+            print("\n--- Select a Document to Remove ---")
+            sources = list(document_stores.keys())
+            for i, src in enumerate(sources):
+                print(f"{i + 1}. {src}")
+
+            try:
+                doc_choice = int(input(f"Enter your choice (1-{len(sources)}): ")) - 1
+                if not 0 <= doc_choice < len(sources):
+                    print("Invalid choice. Please try again.")
+                    continue
+
+                selected_source = sources[doc_choice]
+
+                # Delete the collection from ChromaDB
+                delete_collection(selected_source)
+
+                # Remove from in-memory store
+                del document_stores[selected_source]
+
+                # Update the sources file
+                save_sources(list(document_stores.keys()))
+
+                print(f"Successfully removed document: {selected_source}")
+
+            except ValueError:
+                print("Invalid input. Please enter a number.")
+
+        elif choice == '5':
             print("Exiting RAG system. Goodbye!")
             break
         
         else:
-            print("Invalid choice. Please enter a number between 1 and 4.")
+            print("Invalid choice. Please enter a number between 1 and 5.")
 
 if __name__ == "__main__":
     main()
