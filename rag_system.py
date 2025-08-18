@@ -263,12 +263,16 @@ SOURCES_FILE = 'document_sources.json'
 def load_sources():
     """Loads the list of document sources from the JSON file."""
     if not os.path.exists(SOURCES_FILE):
-        return {}
+        return []
     try:
         with open(SOURCES_FILE, 'r') as f:
-            return json.load(f)
+            # handle case where file is empty
+            content = f.read()
+            if not content:
+                return []
+            return json.loads(content)
     except (json.JSONDecodeError, FileNotFoundError):
-        return {}
+        return []
 
 def save_sources(sources):
     """Saves the list of document sources to the JSON file."""
