@@ -5,6 +5,7 @@ import google.generativeai as genai
 import json
 from bs4 import BeautifulSoup
 import requests
+from pypdf import PdfReader
 
 # Try to import chromadb optionally. Installing chromadb can pull heavy
 # dependencies (onnxruntime, pulsar-client, numpy pins) which may conflict
@@ -92,8 +93,19 @@ def load_and_chunk_data(source, chunk_size=1000, chunk_overlap=100):
                 with open(source, 'r', encoding='utf-8') as f:
                     soup = BeautifulSoup(f, 'html.parser')
                     text = soup.get_text(separator=' ', strip=True)
+            elif file_extension == '.pdf':
+                try:
+                    with open(source, 'rb') as f:
+                        reader = PdfReader(f)
+                        pdf_text = []
+                        for page in reader.pages:
+                            pdf_text.append(page.extract_text())
+                        text = "\n".join(pdf_text)
+                except Exception as e:
+                    print(f"Error reading PDF file {source}: {e}")
+                    return None
             else:
-                print(f"Error: Unsupported file type '{file_extension}'. Please use JSON or HTML.")
+                print(f"Error: Unsupported file type '{file_extension}'. Please use JSON, HTML or PDF.")
                 return None
 
         except Exception as e:
@@ -308,7 +320,7 @@ def main():
 
         if choice == '1':
             # Add a new document
-            source = input("Enter the path to your JSON/HTML file or a URL to scrape: ")
+            source = input("Enter the path to your JSON/HTML/PDF file or a URL to scrape: ")
             if source in document_stores:
                 print(f"Document '{source}' is already loaded.")
                 continue
