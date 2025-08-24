@@ -6,6 +6,9 @@ import json
 from bs4 import BeautifulSoup
 import requests
 from pypdf import PdfReader
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Try to import chromadb optionally. Installing chromadb can pull heavy
 # dependencies (onnxruntime, pulsar-client, numpy pins) which may conflict

@@ -2,7 +2,7 @@
 # langchain-community
 # langchain-google-genai
 # faiss-cpu
-# python-dotenv
+python-dotenv
 google-generativeai
 beautifulsoup4
 requests
